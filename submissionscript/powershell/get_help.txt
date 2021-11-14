@@ -1,0 +1,236 @@
+
+NAME
+    Invoke-Sqlcmd
+    
+SYNOPSIS
+    Runs a script containing statements supported by the SQL Server SQLCMD utility.
+    
+    
+    --- Example 1: Connect to a named instance and run a script ---
+    
+    PS C:\> Invoke-Sqlcmd -Query "SELECT GETDATE() AS TimeOfQuery" -ServerInstance "MyComputer\MainInstance"
+    
+    TimeOfQuery
+    -----------
+    9/21/2017 2:48:24 PM
+    
+    This command connects to a named instance of the SQL Database Engine on a computer and runs a basic Transact-SQL script.
+    Example 2: Invoke commands in a script file and save the output in a text file
+    
+    PS C:\> Invoke-Sqlcmd -InputFile "C:\ScriptFolder\TestSqlCmd.sql" | Out-File -FilePath "C:\ScriptFolder\TestSqlCmd.rpt"
+    Output sent to TestSqlCmd.rpt.
+    
+    This command reads a file containing Transact-SQL statements and SQLCMD commands, runs the file, and writes the output to another file.
+    
+    The output file may contain proprietary information, so you should secure the output files with the appropriate NTFS permissions.
+    Example 3: Invoke a script and pass in variable values from a string
+    
+    PS C:\> $StringArray = "MYVAR1='String1'", "MYVAR2='String2'"
+    PS C:\> Invoke-Sqlcmd -Query "SELECT `$(MYVAR1) AS Var1, `$(MYVAR2) AS Var2" -Variable $StringArray
+    
+    Var1     Var2
+    ----     ----
+    String1  String2
+    
+    This command uses an array of character strings as input to the Variable parameter.
+    
+    The array defines multiple SQLCMD variables.
+    
+    The $ signs in the SELECT statement that identify the SQLCMD variables are escaped using the back-tick (`) character.
+    Example 4: Invoke a script and pass in variables from the SQL database engine
+    
+    PS C:\> Set-Location "SQLSERVER:\SQL\MyComputer\MainInstance"
+    PS SQLSERVER:\SQL\MyComputer\MainInstance> Invoke-Sqlcmd -Query "SELECT SERVERPROPERTY('MachineName') AS ComputerName" -ServerInstance (Get-Item .)
+    
+    ComputerName
+    ------------
+    MyComputer
+    
+    This command uses Set-Location to navigate to the SQL ServerWindows PowerShell provider path for an instance of the SQL Database Engine.
+    
+    Then it calls Get-Item to retrieve a SQL Management Object Server object for use as the ServerInstance parameter of Invoke-Sqlcmd.
+    ------ Example 5: Run a query and display verbose output ------
+    
+    PS C:\> Set-Location "SQLSERVER:\SQL\MyComputer\MainInstance"
+    PS C:\> Invoke-SqlCmd -Query "PRINT N'abc'" -Verbose
+    VERBOSE: abc
+    
+    This command uses the Windows PowerShellVerbose parameter to return the message output of the SQL PRINT command.
+    Example 6: Invoke a command using a positional string as input
+    
+    PS C:\> Set-Location "SQLSERVER:\SQL\MyComputer\MainInstance\Databases\MyDatabase"
+    PS SQLSERVER:\SQL\MyComputer\MainInstance> Invoke-Sqlcmd "SELECT DB_NAME() AS DatabaseName"
+    WARNING: Using provider context. Server = MyComputer\MainInstance, Database = MyDatabase.
+    
+    DatabaseName
+    ------------
+    MyDatabase
+    
+    This command uses a positional string to supply the input to the Query parameter.
+    
+    It also demonstrates how  Invoke-Sqlcmd uses the current path to set the database context to MyDatabase.
+    -------- Example 7: Capture data into a DataSet object --------
+    
+    PS C:\> $DS = Invoke-Sqlcmd -ServerInstance "MyComputer" -Query "SELECT  ID, Item FROM MyDB.dbo.MyTable" -As DataSet
+    PS C:\> $DS.Tables[0].Rows | %{ echo "{ $($_['ID']), $($_['Item']) }" }
+    
+    { 10, AAA }
+    { 20, BBB }
+    { 30, CCC }
+    
+    This command uses the As DataSet parameter to capture the data into a .Net System.Data.DataSet object and stores the result in the variable '$DS'. The object can be used for further processing.
+    ------------- Example 8: Get specific column sets -------------
+    
+    PS C:\> $Tables = Invoke-Sqlcmd -ServerInstance "MyComputer" -Query "SELECT  Item, id FROM MyDatabase.dbo.MyTable; SELECT GETDATE() AS T" -As DataTables
+    PS C:\> $Tables[0].Rows | %{ echo $_.ID }
+    PS C:\> $Tables[1].Rows | %{ echo $_.T.DayOfWeek }
+    
+    10
+    20
+    30
+    
+    Monday
+    
+    The first command uses the As DataTables parameter to capture the data into a collection of .Net System.Data.DataTable objects. The command gets two tables with different column sets.
+    
+    Each table can be processed individually, based on its own schema.
+    --------- Example 9: Gain full control of a connection ---------
+    
+    PS C:\> Invoke-Sqlcmd -Query "SELECT COUNT(*) AS Count FROM MyTable" -ConnectionString "Data Source=MYSERVER;Initial Catalog=MyDatabase;Integrated Security=True;ApplicationIntent=ReadOnly"
+    Count
+    -----
+    127432
+    
+    This command users the -ConnectionString parameter to gain full control of the connection that this cmdlet establishes, instead of the Invoke-Sqlcmd to build the connection string based on the parameters passed on the command line.
+    
+    This is useful for less-common properties that you may want to use.
+    Example 10: Execute a stored procedure and capture the SQL errors
+    
+    PS C:\> $script_sp_with_errors = @'
+    CREATE PROCEDURE [dbo].[TestProcedure3]
+    AS 
+    BEGIN 
+      CREATE TABLE [dbo].[TestTable] (col INT NOT NULL);
+      INSERT INTO [dbo].[TestTable] VALUES (NULL); -- will cause an error
+    END
+    GO
+    '@
+    
+    # Create a test database
+    PS C:\> Invoke-SqlCmd -ServerInstance MyServer -Query 'CREATE DATABASE TestDB'
+    # ... adds a stored procedure that has errors in it...
+    PS C:\> Invoke-SqlCmd -ServerInstance MyServer -Database 'TestDB' -Query $script_sp_with_errors
+    # ... executes the SP and collected the errors
+    PS C:\> Invoke-SqlCmd -ServerInstance MyServer -Database 'TestDB' -Query 'EXEC TestProcedure3' -OutputSqlErrors $true
+    
+    Here's the output:
+    Invoke-SqlCmd : Cannot insert the value NULL into column 'col', table 'TestDB.dbo.TestTable'; column does not allow nulls. INSERT fails.
+    The statement has been terminated.
+     Msg 515, Level 16, State 2, Procedure TestProcedure3, Line 5.
+    At line:1 char:1
+    ...
+    
+    This command users the -OutputSqlErrors parameter to report the errors to the user. Note that the error message in this case provides extra information like the SP name and the line number where the error occurred.
+    Example 11: Connect to Azure SQL Databases (or Managed Instance) using a Service Principal
+    
+    Import-Module SQLServer
+    Import-Module Az.Accounts -MinimumVersion 2.2.0
+    
+    # If you already have your Access Token available, you can skip this section
+    # and just pass it to the cmdlet.
+    # Note: the sample assumes that you or your DBA configured the server to accept connections using
+    #       that Service Principal and has granted it access to the database (in this example at least
+    #       the SELECT permission).
+    
+    ### Obtain the Access Token: there are many ways to do it, this is one of them
+    Connect-AzAccount
+    $access_token = (Get-AzAccessToken -ResourceUrl https://database.windows.net).Token
+    
+    ### Here's is another way to obtain the token without using the Az.Account module, by
+    ### providing your ServicePrincipal info:
+    #   $clientid = "<enter application id that corresponds to the Service Principal>" # Do not confuse with its display name
+    #   $tenantid = "<enter the tenant ID of the Service Principal>"
+    #   $secret = "<enter the secret associated with the Service Principal>"
+    #   $request = Invoke-RestMethod -Method POST `
+    #              -Uri "https://login.microsoftonline.com/$tenantid/oauth2/token"`
+    #              -Body @{ resource="https://database.windows.net/"; grant_type="client_credentials"; client_id=$clientid; client_secret=$secret }`
+    #             -ContentType "application/x-www-form-urlencoded"
+    #   $access_token = $request.access_token
+    
+    # Now that we have the token, we use it to connect to the database 'mydb' on server 'myserver'
+    Invoke-Sqlcmd -ServerInstance myserver.database.windows.net -Database mydb -AccessToken $access_token`
+                  -query 'select * from Table1'
+    
+    
+    Example 12: Connect to Azure SQL Databases (or Managed Instance) using a Managed Identity
+    
+    Import-Module SQLServer
+    
+    # Note: the sample assumes that you or your DBA configured the server to accept connections using
+    #       that VM Identity you are running on and has granted it access to the database (in this 
+    #       example at least the SELECT permission).
+    
+    ### Obtain the Access Token from the machine
+    $response = Invoke-WebRequest `
+         -Uri 'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fdatabase.windows.net'`
+         -Method GET`
+         -Headers @{Metadata="true"}
+    $access_token = ($response.Content | ConvertFrom-Json).access_token
+    
+    # Now that we have the token, we use it to connect to the database 'mydb' on server 'myserver'
+    Invoke-Sqlcmd -ServerInstance myserver.database.windows.net -Database mydb -AccessToken $access_token`
+                  -query 'select * from Table1'
+    
+    This example is similar to the one above. It only shows you the flexibility of the AccessToken parameter.
+    Example 13: Connect to an Availability Group configured for Read-Only Routing using -ApplicationIntent
+    
+    # In the following example:
+    # - MT_2009250511 is a listener for an AG configured for Read-Only Routing (port 5555)
+    # - AGDB_2_1 is the DB in the AG
+    # - VLM00226138 is the primary replica configured to only allow ReadWrite connections 
+    # - VLM00226137 is the secondary replica
+    # 
+    Invoke-Sqlcmd -ServerInstance "MT_2009250511,5555" -Database AGDB_2_1 `
+         -HostName "PowershellBox1" -ApplicationName "ReadWrite" -ApplicationIntent ReadWrite `
+         -Query "select HOST_NAME() AS HostName, APP_NAME() AS ApplicationIntent, @@SERVERNAME AS ServerName"
+    
+    Invoke-Sqlcmd -ServerInstance "MT_2009250511,5555" -Database AGDB_2_1 `
+         -HostName "PowershellBox2" -ApplicationName "ReadOnly" -ApplicationIntent ReadOnly `
+         -Query "select HOST_NAME() AS HostName, APP_NAME() AS ApplicationIntent, @@SERVERNAME AS ServerName"  
+    
+    # When you run the 2 cmdlets above, the output is going to be something like this:  
+    #  
+    # HostName       ApplicationIntent ServerName  
+    # --------       ----------------- ----------  
+    # PowershellBox1 ReadWrite         VLM00226138  
+    #  
+    # HostName       ApplicationIntent ServerName  
+    # --------       ----------------- ----------  
+    # PowershellBox2 ReadOnly          VLM00226137
+    
+    which shows that, depending on the value of the `-ApplicationIntent` parameter, the connection is routed to a different server in the AG. Incidentally, observe the uses of the `-ApplicationName` and `-HostName` parameters to visually differentiate the two results: this is a common technique that can be used to trace connections and their intents, beyond the -ApplicationIntent example illustrated here.
+    Example 14: Capture connection statistics via -StatisticsVariable parameter
+    
+    Import-Module SQLServer
+    Invoke-Sqlcmd -ServerInstance localhost -StatisticsVariable stats `
+                  -Query 'CREATE TABLE #Table (ID int); INSERT INTO #Table VALUES(1), (2); INSERT INTO #Table VALUES(3); SELECT * FROM #Table'
+    
+    Write-Host "Number of rows affected......: $($stats.IduRows)"
+    Write-Host "Number of insert statements..: $($stats.IduCount)"
+    Write-Host "Number of select statements..: $($stats.SelectCount)"
+    Write-Host "Total execution time.........: $($stats.ExecutionTime)ms"
+    
+    # When you run the code fragment above, is going to be something like this:  
+    #
+    # Number of rows affected......: 3
+    # Number of insert statements..: 2
+    # Number of select statements..: 1
+    # Total execution time.........: 5ms
+    
+    This example shows how to use the `-StatisticsVariable` parameter to capture informations about the connection, the statements executed, and the execution time when running some T-SQL that creates a temporary table, insert some value, and finally issues a select to get all the inserted rows.
+    
+    Note: when the same query is executed against multiple servers (e.g. by piping the server names thru the cmdlet), the `StatisticsVariable` captures an array of statistics, one for each connection. Results can then be aggregated by using, for example, `($stats.IduRows | Measure-Object -Sum).Sum`.
+    
+    Refer to Provider Statistics for SQL Server (/dotnet/framework/data/adonet/sql/provider-statistics-for-sql-server)for a more information about the available statistics.
+
+
