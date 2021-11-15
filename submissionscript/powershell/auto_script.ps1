@@ -22,16 +22,17 @@ $f_ns_num_only.IndexOf($f_ns_num_only[-1])
 # Getting version from the reference file
 
 
-$get_db_version = (Get-Content -Path ..\..\test\expecteddbstate\versionTable.json | ConvertFrom-Json ).version
+$get_db_version = (Get-Content -Path $db_version_path | ConvertFrom-Json).version
 
 
 
 # Comparing latest version with latest last file
-if ($f_ns_xnum_x_[-1] -ne $get_db_version){
+# if ($file_names_w_num[-1] -ne $get_db_version){
     
-}
+# }
 
-Set-Content -Path ..\..\test\expecteddbstate\versionTable.json -Value '{"version": $f_ns_xnum_x_[-1]}'
+# Setting the db version
+# Set-Content -Path ..\..\test\expecteddbstate\versionTable.json -Value '{"version": $file_names_w_num[-1]}' | ConvertTo-Json 
 
 
 
@@ -39,12 +40,14 @@ Set-Content -Path ..\..\test\expecteddbstate\versionTable.json -Value '{"version
 
 
 # Loop through the numbered files then compare their number to the database version
+
 Foreach ($file in $file_names){
-
     $file_number = $file -replace '([0-9]*)\D.*','$1'
-    if ($file_number-gt $get_db_version){
+    if ($file_number -gt $get_db_version){
         $file_index = $f_ns_num_only.IndexOf($file_number)
-       # Invoke-Sqlcmd -HostName $args[0] -Database $args[1] -Username $args[2] -Password[3] -InputFile $file_names_w_num[$file_index]
-
+        Write-Host 'Now running script ' + $file_names_w_num[$file_index]
+        Invoke-Sqlcmd -HostName $args[0] -Database $args[1] -Username $args[2] -Password[3] -InputFile $file_names_w_num[$file_index]
+        Set-Content -Path ..\..\test\expecteddbstate\versionTable.json -Value '{"version": "$file_names_w_num[$file_index]"}' | ConvertTo-Json
+        $get_db_version
     } 
 }
